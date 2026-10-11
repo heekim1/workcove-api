@@ -1,0 +1,147 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile_dev
+      args:
+        APP_USER: ${APP_USER:-app}
+        APP_UID: ${APP_UID:-1000}
+    command:
+      [
+        "bash",
+        "/app/wait-for-it.sh",
+        "postgres:5432",
+        "--timeout=60",
+        "--",
+        "bash",
+        "/app/wait-for-it.sh",
+        "redis:6379",
+        "--timeout=60",
+        "--",
+        "bash",
+        "/app/docker-entrypoint.sh",
+      ]
+    ports:
+      - "8000:8000"  # Bind to all available network interfaces
+    env_file:
+      - ./.env_dev
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /tmp:/tmp
+    networks:
+      - workcove
+
+  postgres:
+    image: postgres:17
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    volumes:
+      - ~/Desktop/workcove_data/postgres:/var/lib/postgresql/data
+    env_file:
+      - ./.env_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - workcove
+
+  redis:
+    image: redis:6.2-alpine
+    command: ["redis-server", "--protected-mode", "no"]
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - workcove
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile_dev
+      args:
+        APP_USER: ${APP_USER:-app}
+        APP_UID: ${APP_UID:-1000}
+    command:
+      [
+        "bash",
+        "/app/wait-for-it.sh",
+        "web:8000",
+        "--timeout=60",
+        "--",
+        "bash",
+        "/app/wait-for-it.sh",
+        "redis:6379",
+        "--timeout=60",
+        "--",
+        "celery",
+        "-A",
+        "workcove",
+        "worker",
+        "--loglevel=info",
+      ]
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - web
+    env_file:
+      - ./.env_dev
+    volumes:
+      - .:/app
+      - /tmp:/tmp
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"
+    networks:
+      - workcove
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile_dev
+      args:
+        APP_USER: ${APP_USER:-app}
+        APP_UID: ${APP_UID:-1000}
+    command:
+      [
+        "bash",
+        "/app/wait-for-it.sh",
+        "web:8000",
+        "--timeout=60",
+        "--",
+        "bash",
+        "/app/wait-for-it.sh",
+        "redis:6379",
+        "--timeout=60",
+        "--",
+        "celery",
+        "-A",
+        "workcove",
+        "beat",
+        "--loglevel=info",
+      ]
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - web
+    env_file:
+      - ./.env_dev
+    volumes:
+      - .:/app
+      - /tmp:/tmp
+    networks:
+      - workcove
+
+networks:
+  workcove:
+    driver: bridge
