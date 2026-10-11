@@ -15,8 +15,8 @@ db.sqlite3
 staticfiles/
 media/
 
-.env
-.env*
+.env_*
+.env.*
 !.env.example
 
 .DS_Store
